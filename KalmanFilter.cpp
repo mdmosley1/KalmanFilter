@@ -2,15 +2,59 @@
 #include "opencv2/highgui/highgui.hpp"
 
 #include <cmath> // M_PI, cos, sin
-
-double dt = 0.1; // the time delta for each iteration
+#include <cstdlib> // rand
+#include <stdlib.h>     /* srand, rand */
+#include <time.h>       /* time */
 
 using namespace cv;
+
+double dt = 0.1; // the time delta for each iteration
+const int MAP_SIZE = 500;
+
+Point2f wayPointLocation;
+
+struct Velocity
+{
+    Velocity(double _lin, double  _ang): linear(_lin), angular(_ang) {};
+    double linear, angular;
+};
+
+struct State
+{
+    State(double _x,double _y,double _theta): x(_x), y(_y), theta(_theta) {};
+    State(): x(0), y(0), theta(0) {} ;
+    double x,y,theta;
+};
+
+// Differential Drive Controller
+Velocity ComputeVelocity(State _state, Point2f _goal)
+{
+    double kp = 0.2;
+    double ka = 3;
+    double kb = 0;
+
+    double deltaX = _goal.x - _state.x;
+    double deltaY = _goal.y - _state.y;
+
+    double rho = std::sqrt(deltaX*deltaX + deltaY*deltaY);
+    double alpha = -_state.theta + std::atan2(deltaY, deltaX);
+
+    if (alpha > M_PI)
+        alpha -= 2 * M_PI;
+    else if (alpha < -M_PI)
+        alpha += 2 * M_PI;
+
+    double beta = -_state.theta - alpha;
+    double linearVelocity = kp * rho;
+    double angularVelocity = ka * alpha + kb * beta;
+
+    return Velocity(linearVelocity, angularVelocity);
+}
 
 void DrawWaypoints(Mat image)
 {
     Scalar color = Scalar(255,0,0); // red
-    circle(image, Point2f(100,100), 5, color, CV_FILLED);
+    circle(image, wayPointLocation, 5, color, CV_FILLED);
 }
 
 void DrawRotatedRectangle(cv::Mat& image, cv::Point centerPoint,
@@ -48,6 +92,12 @@ public:
         {
             Point2f frontPosition = pos_ + 9*Point2f(cos(theta_),sin(theta_));
             circle(image, frontPosition, 5, color_, CV_FILLED);
+        }
+
+    void UpdateVelocity(Velocity vel)
+        {
+            linearVel_ = vel.linear;
+            angularVel_ = vel.angular;
         }
 
     void Draw(Mat& image )
@@ -153,11 +203,11 @@ public:
             rectangle(image, p1, p2, Scalar(0,255,0), CV_FILLED);
         }
 
-private:
     Point2f pos_;
+    double theta_ = 0;
+private:
     double width_ = 10;
     double height_ = 20;
-    double theta_ = 0;
 
     double linearVel_ = 10; // m/s
     double angularVel_ = 0; // rads/s
@@ -179,9 +229,8 @@ private:
 
 void ClearScreen(Mat& image)
 {
-    image = Mat::zeros( 500, 500, CV_8UC3 );
+    image = Mat::zeros( MAP_SIZE, MAP_SIZE, CV_8UC3 );
 }
-
 
 int main(int argc, char** argv)
 {
@@ -189,13 +238,23 @@ int main(int argc, char** argv)
     Mat output;
     ClearScreen(output);
 
+    /* initialize random seed: */
+    srand (time(NULL));
+    wayPointLocation= Point2f(rand() % MAP_SIZE,rand() % MAP_SIZE);
+
     Robot robot(100,200); // start a new robot at this position
 
     std::cout << "Press q to quit." << "\n";
     while (waitKey(1) != 'q')
     {
         // Process user input
-        robot.ProcessUserInput();
+        //robot.ProcessUserInput();
+        State state;
+        state.x = robot.pos_.x;
+        state.y = robot.pos_.y;
+        state.theta = robot.theta_;
+        Velocity vel = ComputeVelocity(state, wayPointLocation);
+        robot.UpdateVelocity(vel);
         // update the positions of everything
         robot.UpdatePosition();
         // Clear the screen before drawing
