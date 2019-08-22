@@ -49,9 +49,6 @@ Velocity ComputeVelocity(State _state, Point2f _goal)
     double linearVelocity = kp * rho;
     double angularVelocity = ka * alpha + kb * beta;
 
-    if (rho < 20.0)
-        wayPointLocation= Point2f(rand() % MAP_SIZE,rand() % MAP_SIZE);
-
     return Velocity(linearVelocity, angularVelocity);
 }
 
@@ -98,7 +95,7 @@ public:
             circle(image, frontPosition, 5, color_, CV_FILLED);
         }
 
-    void UpdateVelocity(Velocity vel)
+    void CommandVelocity(Velocity vel)
         {
             linearVel_ = vel.linear;
             angularVel_ = vel.angular;
@@ -236,6 +233,19 @@ void ClearScreen(Mat& image)
     image = Mat::zeros( MAP_SIZE, MAP_SIZE, CV_8UC3 );
 }
 
+void UpdateWaypoint(Point2f _pos)
+{
+    Point2f deltaPos = wayPointLocation - _pos;
+
+    double rho = std::sqrt(deltaPos.x*deltaPos.x + deltaPos.y*deltaPos.y); // distance btwne goal and state
+
+    if (rho < 20.0)
+    {
+        wayPointLocation = Point2f(rand() % MAP_SIZE,rand() % MAP_SIZE);
+    }
+
+    // change waypoint color
+}
 int main(int argc, char** argv)
 {
     //initialize a 120X350 matrix of black pixels:
@@ -247,6 +257,7 @@ int main(int argc, char** argv)
     wayPointLocation= Point2f(rand() % MAP_SIZE,rand() % MAP_SIZE);
 
     Robot robot(100,200); // start a new robot at this position
+    Robot robot2(200,100); // start a new robot at this position
 
     std::cout << "Press q to quit." << "\n";
     while (waitKey(1) != 'q')
@@ -258,16 +269,28 @@ int main(int argc, char** argv)
         state.y = robot.pos_.y;
         state.theta = robot.theta_;
         Velocity vel = ComputeVelocity(state, wayPointLocation);
-        robot.UpdateVelocity(vel);
+        robot.CommandVelocity(vel);
+
+        state.x = robot2.pos_.x;
+        state.y = robot2.pos_.y;
+        state.theta = robot2.theta_;
+        vel = ComputeVelocity(state, wayPointLocation);
+        robot2.CommandVelocity(vel);
+        
         // update the positions of everything
         robot.UpdatePosition();
+        robot2.UpdatePosition();
+        // Update waypoint position if robot has reached it
+        UpdateWaypoint(robot.pos_);
+        UpdateWaypoint(robot2.pos_);
         // Clear the screen before drawing
         ClearScreen(output);
         // draw everything to the output matrix
         robot.Draw(output);
+        robot2.Draw(output);
         DrawWaypoints(output);
         // display the matrix
         imshow("Output", output);
     }
     return 0;
-}
+}    
