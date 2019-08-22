@@ -9,7 +9,8 @@ using namespace cv;
 
 void DrawWaypoints(Mat image)
 {
-    
+    Scalar color = Scalar(255,0,0); // red
+    circle(image, Point2f(100,100), 5, color, CV_FILLED);
 }
 
 void DrawRotatedRectangle(cv::Mat& image, cv::Point centerPoint,
@@ -43,12 +44,19 @@ public:
         {
         }
 
+    void DrawFrontBumper(Mat& image)
+        {
+            Point2f frontPosition = pos_ + 9*Point2f(cos(theta_),sin(theta_));
+            circle(image, frontPosition, 5, color_, CV_FILLED);
+        }
+
     void Draw(Mat& image )
         {
             // Draw the main body of the robot
             //Point2f tl = pos_ - Point2f( cos(theta_)*width_/2, sin(theta_)*height_/2);
             //Point2f br = pos_ + Point2f( cos(theta_)*width_/2, sin(theta_)*height_/2);
             DrawRotatedRectangle(image, pos_, Size(width_,height_), (theta_+M_PI/2)*180/M_PI);
+            DrawFrontBumper(image);
             //rectangle(image, tl, br, Scalar(0,255,0), CV_FILLED);
 
             // Draw wheel top left
@@ -60,10 +68,9 @@ public:
 
     void UpdatePosition()
         {
-            pos_.y +=  dt*linearVel_*std::sin(theta_);
-            pos_.x +=  dt*linearVel_*std::cos(theta_);
+            pos_.y +=  dt*linearVel_*sin(theta_);
+            pos_.x +=  dt*linearVel_*cos(theta_);
             theta_ += dt*angularVel_;
-                //= pos + dt*;
         }
 
     void IncreaseLinearVelocity()
@@ -101,6 +108,8 @@ public:
                 DecreaseAngularVelocity();
             else if (key == 'd')
                 IncreaseAngularVelocity();
+            else
+                angularVel_ *= 0.95; // angular velocity tends to zero if user does not press key
 
             // switch (key)
             // {
@@ -164,6 +173,8 @@ private:
 
     int wheelWidth_ = 2;
     int wheelHeight_ = 4;
+
+    const Scalar color_ = Scalar(0, 255, 0); // green
 };
 
 void ClearScreen(Mat& image)
@@ -178,14 +189,14 @@ int main(int argc, char** argv)
     Mat output;
     ClearScreen(output);
 
-    Robot robot(100,200);
+    Robot robot(100,200); // start a new robot at this position
 
     std::cout << "Press q to quit." << "\n";
     while (waitKey(1) != 'q')
     {
         // Process user input
         robot.ProcessUserInput();
-        // update the position of the robot
+        // update the positions of everything
         robot.UpdatePosition();
         // Clear the screen before drawing
         ClearScreen(output);
