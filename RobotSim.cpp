@@ -5,6 +5,7 @@
 #include <cstdlib> // rand
 #include <stdlib.h>     /* srand, rand */
 #include <time.h>       /* time */
+#include <memory> // unique ptr
 
 using namespace cv;
 
@@ -19,6 +20,13 @@ struct Velocity
     double linear, angular;
 };
 
+struct Control
+{
+    Control(double _acc, double  _sa): acceleration(_acc), steerAngle(_sa) {};
+    double acceleration, steerAngle;
+};
+
+
 struct State
 {
     State(double _x,double _y,double _theta): x(_x), y(_y), theta(_theta) {};
@@ -26,31 +34,112 @@ struct State
     double x,y,theta;
 };
 
-// Differential Drive Controller
-Velocity ComputeVelocity(State _state, Point2f _goal)
+class Controller
 {
-    //double kp = 0.2;
-    double kp = 0.1;
-    double ka = 0.3;
-    double kb = 0;
+public:
+    Controller() {};
+    virtual Velocity GenerateRobotControl(State _state, Point2f _goal, int key) = 0;
 
-    double deltaX = _goal.x - _state.x;
-    double deltaY = _goal.y - _state.y;
+    Velocity vel_ = Velocity(0.0, 0.0);
 
-    double rho = std::sqrt(deltaX*deltaX + deltaY*deltaY); // distance btwne goal and state
-    double alpha = -_state.theta + std::atan2(deltaY, deltaX); // How much robot needs to turn in order to face waypoint
+    const double linearVelMax_ = 100;
+    const double linearVelMin_ = 0;
 
-    if (alpha > M_PI)
-        alpha -= 2 * M_PI;
-    else if (alpha < -M_PI)
-        alpha += 2 * M_PI;
+    const double angularVelMax_ = 0.5;
+    const double angularVelMin_ = -0.5;
+};
 
-    double beta = -_state.theta - alpha;
-    double linearVelocity = kp * rho;
-    double angularVelocity = ka * alpha + kb * beta;
 
-    return Velocity(linearVelocity, angularVelocity);
+class UserController : public Controller
+{
+public:
+    UserController() {};
+
+    // Process User Input
+    Control GenerateRobotControl(State _state, Point2f _goal, int key)
+        {
+            if (key == 'w')
+                IncreaseLinearVelocity();
+            else if (key == 's')
+                DecreaseLinearVelocity();
+            else if (key == 'a')
+                DecreaseAngularVelocity();
+            else if (key == 'd')
+                IncreaseAngularVelocity();
+
+            return vel_;
+        }
+
+    void IncreaseLinearVelocity()
+        {
+            double newVel = vel_.linear + linearDelta_;
+            vel_.linear = std::min(newVel, linearVelMax_);
+        }
+
+    void DecreaseLinearVelocity()
+        {
+            double newVel = vel_.linear- linearDelta_;
+            vel_.linear = std::max(newVel, linearVelMin_);
+        }
+
+    void IncreaseAngularVelocity()
+        {
+            double newAngVel = vel_.angular + angularDelta_;
+            vel_.angular = std::min(newAngVel, angularVelMax_);
+        }
+
+    void DecreaseAngularVelocity()
+        {
+            double newAngVel = vel_.angular - angularDelta_;
+            vel_.angular = std::max(newAngVel, angularVelMin_);
+        }
+
+private:
+    const double linearDelta_ = 1;
+    const double angularDelta_ = 0.1;
+};
+
+// Differential Drive Controller
+class DiffDriveController : public Controller
+{
+public:
+    DiffDriveController() {};
+
+    Velocity GenerateRobotControl(State _state, Point2f _goal, int key)
+        {
+            //double kp = 0.2;
+            double kp = 0.1;
+            double ka = 0.3;
+            double kb = 0;
+
+            double deltaX = _goal.x - _state.x;
+            double deltaY = _goal.y - _state.y;
+
+            double rho = std::sqrt(deltaX*deltaX + deltaY*deltaY); // distance btwne goal and state
+            double alpha = -_state.theta + std::atan2(deltaY, deltaX); // How much robot needs to turn in order to face waypoint
+
+            if (alpha > M_PI)
+                alpha -= 2 * M_PI;
+            else if (alpha < -M_PI)
+                alpha += 2 * M_PI;
+
+            double beta = -_state.theta - alpha; // desired theta when robot reaches goal (I think)
+            double angularVelocity = ka * alpha + kb * beta;
+            double linearVelocity = kp * rho - std::fabs(alpha)*20.0; // if alpha is high, then need to reduce the linear velocity
+
+            if (rho < 20.0)
+                wayPointLocation= Point2f(rand() % MAP_SIZE,rand() % MAP_SIZE);
+
+            double minVelocity = -5.0;
+            double maxVelocity = 10.0;
+            linearVelocity = min(max(linearVelocity, minVelocity), maxVelocity);
+
+            return Velocity(linearVelocity, angularVelocity);
+        }
+};
+
 }
+
 
 void DrawWaypoints(Mat image)
 {
@@ -121,63 +210,12 @@ public:
         {
             pos_.y +=  dt*linearVel_*sin(theta_);
             pos_.x +=  dt*linearVel_*cos(theta_);
-            theta_ += dt*angularVel_;
+            double steeringRadius = 5;
+            angularVel_ = steerAngle*linearVel_/ steeringRadius;
+            theta_ += dt*angularVel_*linearVel_/10.0;
         }
-
-    void IncreaseLinearVelocity()
-        {
-            double newVel = linearVel_ + linearDelta_;
-            linearVel_ = std::min(newVel, linearVelMax_);
-        }
-
-    void DecreaseLinearVelocity()
-        {
-            double newVel = linearVel_ - linearDelta_;
-            linearVel_ = std::max(newVel, linearVelMin_);
-        }
-
-    void IncreaseAngularVelocity()
-        {
-            double newAngVel = angularVel_ + angularDelta_;
-            angularVel_ = std::min(newAngVel, angularVelMax_);
-        }
-
-    void DecreaseAngularVelocity()
-        {
-            double newAngVel = angularVel_ - angularDelta_;
-            angularVel_ = std::max(newAngVel, angularVelMin_);
-        }
-    void ProcessUserInput()
-        {
-            int key = waitKeyEx(1);
-
-            if (key == 'w')
-                IncreaseLinearVelocity();
-            else if (key == 's')
-                DecreaseLinearVelocity();
-            else if (key == 'a')
-                DecreaseAngularVelocity();
-            else if (key == 'd')
-                IncreaseAngularVelocity();
-            else
-                angularVel_ *= 0.95; // angular velocity tends to zero if user does not press key
-
-            // switch (key)
-            // {
-            // case 2424832: // left
-            //     angularVel_ += 0.1;
-            //     break;
-            // case 2490368: // up
-            //     linearVel_ += 1;
-            //     break;
-            // case 2555904: // right
-            //     angularVel_ -= 0.1;
-            //     break;
-            // case 2621440: // down
-            //     linearVel_ -= 1;
-            //     break;
-            // }
-        }
+    
+    
     void DrawWheelTL(Mat& image)
         {
             Point2f p1 = pos_ - Point2f(width_/2,height_/2) - Point2f(wheelWidth_,0);
@@ -213,14 +251,7 @@ private:
     double linearVel_ = 10; // m/s
     double angularVel_ = 0; // rads/s
 
-    const double linearVelMax_ = 100;
-    const double linearVelMin_ = 0;
-
-    const double angularVelMax_ = 0.5;
-    const double angularVelMin_ = -0.5;
-
-    const double linearDelta_ = 5;
-    const double angularDelta_ = 0.1;
+        
 
     int wheelWidth_ = 2;
     int wheelHeight_ = 4;
@@ -246,6 +277,35 @@ void UpdateWaypoint(Point2f _pos)
 
     // change waypoint color
 }
+
+class KalmanFilter1
+{
+public:
+    KalmanFilter1() {};
+    virtual void EstimateState() = 0;
+};
+
+class KalmanEKF : public KalmanFilter1
+{
+public:
+    KalmanEKF() {};
+    void EstimateState()
+        {
+            std::cout << "EKF filter." << "\n";
+        }
+};
+
+class KalmanLinear : public KalmanFilter1
+{
+public:
+    KalmanLinear() {};
+    void EstimateState()
+        {
+            std::cout << "Linear kalman filter." << "\n";
+        }
+};
+
+
 int main(int argc, char** argv)
 {
     //initialize a 120X350 matrix of black pixels:
@@ -260,23 +320,32 @@ int main(int argc, char** argv)
     Robot robot2(200,100); // start a new robot at this position
 
     std::cout << "Press q to quit." << "\n";
-    while (waitKey(1) != 'q')
+
+    std::unique_ptr<KalmanFilter1> kf;
+    std::unique_ptr<Controller> controller;
+
+    bool autonomousMode = false;
+    if (autonomousMode)
+        controller = std::make_unique<DiffDriveController>();
+    else
+        controller = std::make_unique<UserController>();
+
+    //kf = std::make_unique<KalmanLinear>();
+    //kf = std::make_unique<KalmanEKF>();
+    int key = 0;
+    while(key != 'q')
     {
         // Process user input
-        //robot.ProcessUserInput();
+        key = waitKey(1.0);
+        //kf->EstimateState();
         State state;
         state.x = robot.pos_.x;
         state.y = robot.pos_.y;
         state.theta = robot.theta_;
-        Velocity vel = ComputeVelocity(state, wayPointLocation);
-        robot.CommandVelocity(vel);
 
-        state.x = robot2.pos_.x;
-        state.y = robot2.pos_.y;
-        state.theta = robot2.theta_;
-        vel = ComputeVelocity(state, wayPointLocation);
-        robot2.CommandVelocity(vel);
-        
+        Control control = controller->GenerateRobotControl(state, wayPointLocation, key);
+        robot.UpdateVelocity(control);
+
         // update the positions of everything
         robot.UpdatePosition();
         robot2.UpdatePosition();
@@ -292,5 +361,6 @@ int main(int argc, char** argv)
         // display the matrix
         imshow("Output", output);
     }
+    
     return 0;
 }    
