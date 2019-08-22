@@ -29,15 +29,16 @@ struct State
 // Differential Drive Controller
 Velocity ComputeVelocity(State _state, Point2f _goal)
 {
-    double kp = 0.2;
-    double ka = 3;
+    //double kp = 0.2;
+    double kp = 0.1;
+    double ka = 0.3;
     double kb = 0;
 
     double deltaX = _goal.x - _state.x;
     double deltaY = _goal.y - _state.y;
 
-    double rho = std::sqrt(deltaX*deltaX + deltaY*deltaY);
-    double alpha = -_state.theta + std::atan2(deltaY, deltaX);
+    double rho = std::sqrt(deltaX*deltaX + deltaY*deltaY); // distance btwne goal and state
+    double alpha = -_state.theta + std::atan2(deltaY, deltaX); // How much robot needs to turn in order to face waypoint
 
     if (alpha > M_PI)
         alpha -= 2 * M_PI;
@@ -47,6 +48,9 @@ Velocity ComputeVelocity(State _state, Point2f _goal)
     double beta = -_state.theta - alpha;
     double linearVelocity = kp * rho;
     double angularVelocity = ka * alpha + kb * beta;
+
+    if (rho < 20.0)
+        wayPointLocation= Point2f(rand() % MAP_SIZE,rand() % MAP_SIZE);
 
     return Velocity(linearVelocity, angularVelocity);
 }
